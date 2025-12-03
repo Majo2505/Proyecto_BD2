@@ -1,19 +1,33 @@
-// src/carts/schemas/cart.schema.ts
+// src/orders/schemas/order.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { CartItemSchema } from './cart-item.schema'; // Importamos el sub-schema
+import { OrderItemSchema } from './order-item.schema'; // Importamos el sub-schema
 
 @Schema()
-export class Cart extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
-  userId: Types.ObjectId; // Puede ser null si es anónimo
+export class Order extends Document {
+  @Prop({ required: true, unique: true })
+  orderNumber: number; // Número secuencial para el cliente
 
-  // Array de objetos embebidos usando el sub-schema
-  @Prop({ type: [CartItemSchema], default: [] })
-  items: any[]; 
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
 
-  @Prop({ required: true, default: 0 })
-  total: number;
+  @Prop({ required: true })
+  shippingAddress: string; // Dirección completa (Snapshot)
+
+  @Prop({ type: [OrderItemSchema], default: [] })
+  items: any[]; // Array de items con precios fijos
+
+  @Prop({ required: true })
+  orderTotal: number;
+
+  @Prop({ required: true, default: 'Pending' }) // Pagado, Fallido, Pendiente
+  paymentStatus: string; 
+
+  @Prop({ required: true, default: 'Processing' }) // Procesando, Enviado, Entregado
+  status: string; 
+
+  @Prop({ default: Date.now })
+  createdAt: Date; // Fecha de creación
 }
 
-export const CartSchema = SchemaFactory.createForClass(Cart);
+export const OrderSchema = SchemaFactory.createForClass(Order);
