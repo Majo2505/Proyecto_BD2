@@ -1,22 +1,31 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
-// El tipo de documento que Mongoose manejará
 export type ProductDocument = Product & Document;
 
-@Schema()
+@Schema({ timestamps: true }) // Mantiene el registro automático de createdAt y updatedAt
 export class Product {
-  @Prop({ required: true })
-  name: string; 
+  @Prop({ required: true, unique: true })
+  name: string;
 
-  @Prop({ required: true })
+  @Prop()
   description: string;
 
   @Prop({ required: true, min: 0 })
   price: number;
+
+  @Prop({ required: true, default: 0 })
+  stock: number; // Campo esencial de inventario
+
+  // --- RELACIÓN CON CATEGORIES (Obligatoria) ---
   
-  @Prop({ default: Date.now })
-  createdAt: Date; 
+  // Desnormalización: Guarda el nombre de la categoría
+  @Prop({ required: true })
+  categoryName: string; 
+
+  // Referencia de ID: Almacena el ID de la Categoría y establece la referencia Mongoose
+  @Prop({ type: Types.ObjectId, required: true, ref: 'Category' })
+  categoryId: Types.ObjectId;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

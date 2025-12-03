@@ -23,12 +23,12 @@ export class UsersService {
   // ---  LEER TODOS ---
   // Mantenemos User[] o Document[] ya que es un array
   async findAll(): Promise<User[]> { 
-    return this.userModel.find().select('-password').exec();
+    return this.userModel.find().select('-password').populate('pastOrders', 'createdAt status orderNumber items orderTotal').exec();
   }
 
   // --- LEER UNO ---
   async findOne(id: string): Promise<UserDocument> {
-    const user = await this.userModel.findById(id).select('-password').exec();
+    const user = await this.userModel.findById(id).select('-password').populate('pastOrders', 'createdAt status orderNumber items orderTotal').exec();
     if (!user) {
       throw new NotFoundException(`Usuario con ID "${id}" no encontrado.`);
     }

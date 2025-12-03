@@ -1,8 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+
+// Importaciones de Schemas y DTOs
 import { Order, OrderDocument } from './schemas/order.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { User, UserDocument } from '../users/schemas/user.schema'; // 👈 IMPORTADO
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 
@@ -19,6 +22,7 @@ export class OrdersService {
   constructor(
     @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>, // 👈 INYECTAMOS EL MODELO DE USUARIO
   ) {}
 
   // Generar número de orden único
@@ -27,6 +31,7 @@ export class OrdersService {
       .findOne()
       .sort({ orderNumber: -1 })
       .exec();
+    // Inicia en 1000 si no hay órdenes
     return lastOrder ? lastOrder.orderNumber + 1 : 1000;
   }
 
@@ -36,16 +41,22 @@ export class OrdersService {
     return random < 0.8 ? 'Aprobado' : 'Fallido';
   }
 
-  // POST /orders (Crear orden)
+  // --- POST /orders (Crear orden) ---
   async create(createOrderDto: CreateOrderDto): Promise<Order> {
     const { userId, shippingAddress, items } = createOrderDto;
-
-    // Validar que haya items
+    
+    // --- 1. Validaciones Iniciales ---
     if (!items || items.length === 0) {
       throw new BadRequestException('Order must contain at least one item');
     }
+    
+    // Validar que el usuario exista (Opcional, pero buena práctica)
+    const userExists = await this.userModel.findById(userId).exec();
+    if (!userExists) {
+        throw new NotFoundException(`User with ID "${userId}" not found`);
+    }
 
-    // Obtener información de productos y crear snapshots
+    // --- 2. Creación de Snapshot y Cálculo del Total ---
     const orderItems: OrderItemType[] = [];
     let orderTotal = 0;
 
@@ -72,13 +83,11 @@ export class OrdersService {
       orderTotal += product.price * item.quantity;
     }
 
-    // Simular aprobación de pago (80% aprobado)
+    // --- 3. Generación y Creación ---
     const paymentStatus = this.simulatePaymentApproval();
-
-    // Generar número de orden secuencial
     const orderNumber = await this.generateOrderNumber();
+    const orderStatus = paymentStatus === 'Aprobado' ? 'Procesando' : 'Cancelado';
 
-    // Crear orden
     const createdOrder = new this.orderModel({
       orderNumber,
       userId: new Types.ObjectId(userId),
@@ -86,34 +95,37 @@ export class OrdersService {
       items: orderItems,
       orderTotal,
       paymentStatus,
-      status: paymentStatus === 'Aprobado' ? 'Procesando' : 'Cancelado',
+      status: orderStatus,
     });
 
-    return createdOrder.save();
+    const order = await createdOrder.save(); // ¡Guardamos para obtener el _id!
+
+     await this.userModel.updateOne(
+        { _id: order.userId },
+        { $push: { pastOrders: order._id } } // $push añade el _id al array
+    ).exec();
+
+    return order;
   }
 
-  // GET /orders (Leer todas las órdenes)
   async findAll(): Promise<Order[]> {
-    return this.orderModel.find().exec();
+    return this.orderModel.find().populate('userId', 'name email').exec(); 
   }
 
-  // GET /orders/user/:userId (Leer órdenes de un usuario específico)
   async findByUser(userId: string): Promise<Order[]> {
     return this.orderModel.find({ userId: new Types.ObjectId(userId) }).exec();
   }
 
-  // GET /orders/:id (Leer una orden por ID)
   async findOne(id: string): Promise<Order> {
-    const order = await this.orderModel.findById(id).exec();
+    const order = await this.orderModel.findById(id).populate('userId', 'name email').exec();
     if (!order) {
       throw new NotFoundException(`Order with ID "${id}" not found`);
     }
     return order;
   }
 
-  // PATCH /orders/:id (Actualizar orden - solo status y paymentStatus)
+  // --- PATCH /orders/:id (Actualizar orden - solo status y paymentStatus) ---
   async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
-    // Validar estados permitidos
     if (updateOrderDto.status) {
       const validStatuses = ['Pendiente', 'Procesando', 'Enviado', 'Entregado', 'Cancelado'];
       if (!validStatuses.includes(updateOrderDto.status)) {
@@ -139,12 +151,17 @@ export class OrdersService {
     return updatedOrder;
   }
 
-  // DELETE /orders/:id (Eliminar orden)
   async remove(id: string): Promise<any> {
     const deletedOrder = await this.orderModel.findByIdAndDelete(id).exec();
     if (!deletedOrder) {
       throw new NotFoundException(`Order with ID "${id}" not found`);
     }
+    
+    await this.userModel.updateOne(
+        { _id: deletedOrder.userId },
+        { $pull: { pastOrders: deletedOrder._id } } // $pull elimina el ID del array pastOrders
+    ).exec();
+
     return deletedOrder;
   }
 }
